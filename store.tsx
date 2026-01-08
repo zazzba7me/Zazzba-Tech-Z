@@ -8,7 +8,6 @@ const supabaseUrl = (typeof process !== 'undefined' && process.env?.SUPABASE_URL
 const supabaseKey = (typeof process !== 'undefined' && process.env?.SUPABASE_ANON_KEY) || 'sb_publishable_qo7f0EnWkgLhgVY2wVjWfw_zrw8hEWP';
 export const supabase = createClient(supabaseUrl, supabaseKey);
 
-// Admin Emails
 const ADMIN_EMAILS = ['sazzad7.me@gmail.com']; 
 
 interface ShopConfig {
@@ -99,6 +98,23 @@ interface StoreContextType {
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
 
+// Default values for configurations to prevent "Empty" look on first load
+const DEFAULT_BANNER: BannerConfig = {
+    title: "Upgrade Your <span class='text-brand-500'>Digital Life</span>",
+    subtitle: "Premium gadgets at unbeatable prices delivered to your door.",
+    image: "https://images.unsplash.com/photo-1550745165-9bc0b252726f?auto=format&fit=crop&q=80",
+    tagText: "New Collection",
+    buttonText: "Shop Now"
+};
+
+const DEFAULT_FOOTER: FooterConfig = {
+    description: "Your trusted destination for premium gadgets. We bring the future to your doorstep.",
+    facebook: "#", instagram: "#", youtube: "#",
+    address: "Isapura Chowrasta, Sirajdikhan, Munshiganj",
+    phone: "01953319995",
+    email: "support@zazzba.com"
+};
+
 export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
@@ -118,61 +134,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const [reviews, setReviews] = useState<Review[]>([]);
   const [deliveryZones, setDeliveryZones] = useState<DeliveryZone[]>([]);
 
-  // Site Configs - Default values used only as fallback
   const [smsConfig, setSmsConfigState] = useState<SmsConfig>({ apiKey: '', processingTemplate: '' });
   const [paymentConfig, setPaymentConfigState] = useState<PaymentConfig>({ bkashNumber: '', nagadNumber: '', rocketNumber: '', instructions: '' });
-  const [bannerConfig, setBannerConfigState] = useState<BannerConfig>({ title: '', subtitle: '', image: '', tagText: '', buttonText: '' });
-  const [footerConfig, setFooterConfigState] = useState<FooterConfig>({ description: '', facebook: '', instagram: '', youtube: '', address: '', phone: '', email: '' });
-
-  useEffect(() => {
-    refreshData();
-    checkSession();
-
-    // --- REALTIME SUBSCRIPTIONS ---
-    // This allows the app to update INSTANTLY when database changes
-    const productSub = supabase.channel('realtime-products').on('postgres_changes', { event: '*', table: 'products' }, fetchInitialData).subscribe();
-    const orderSub = supabase.channel('realtime-orders').on('postgres_changes', { event: '*', table: 'orders' }, fetchInitialData).subscribe();
-    const settingsSub = supabase.channel('realtime-settings').on('postgres_changes', { event: '*', table: 'site_settings' }, fetchSettings).subscribe();
-
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (session?.user) {
-        await fetchUserProfile(session.user.id, session.user.email!);
-      } else if (event === 'SIGNED_OUT') {
-        setUser(null);
-        setCurrentView('home');
-      }
-    });
-
-    return () => {
-      productSub.unsubscribe();
-      orderSub.unsubscribe();
-      settingsSub.unsubscribe();
-      authListener.subscription.unsubscribe();
-    };
-  }, []);
-
-  const refreshData = async () => {
-    await Promise.all([fetchInitialData(), fetchSettings()]);
-  };
-
-  const fetchSettings = async () => {
-    try {
-      const { data, error } = await supabase.from('site_settings').select('*');
-      if (data) {
-        const banner = data.find(s => s.key === 'banner_config')?.value;
-        const footer = data.find(s => s.key === 'footer_config')?.value;
-        const sms = data.find(s => s.key === 'sms_config')?.value;
-        const payment = data.find(s => s.key === 'payment_config')?.value;
-
-        if (banner) setBannerConfigState(banner);
-        if (footer) setFooterConfigState(footer);
-        if (sms) setSmsConfigState(sms);
-        if (payment) setPaymentConfigState(payment);
-      }
-    } catch (err) {
-      console.error("Error fetching settings:", err);
-    }
-  };
+  const [bannerConfig, setBannerConfigState] = useState<BannerConfig>(DEFAULT_BANNER);
+  const [footerConfig, setFooterConfigState] = useState<FooterConfig>(DEFAULT_FOOTER);
 
   const fetchInitialData = async () => {
     try {
@@ -194,9 +159,50 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       if (revData) setReviews(revData);
       if (zoneData) setDeliveryZones(zoneData);
     } catch (err) {
-      console.error("Error fetching data:", err);
+      console.error("Fetch data error:", err);
     }
   };
+
+  const fetchSettings = async () => {
+    try {
+      const { data } = await supabase.from('site_settings').select('*');
+      if (data) {
+        const banner = data.find(s => s.key === 'banner_config')?.value;
+        const footer = data.find(s => s.key === 'footer_config')?.value;
+        const sms = data.find(s => s.key === 'sms_config')?.value;
+        const payment = data.find(s => s.key === 'payment_config')?.value;
+
+        if (banner) setBannerConfigState(banner);
+        if (footer) setFooterConfigState(footer);
+        if (sms) setSmsConfigState(sms);
+        if (payment) setPaymentConfigState(payment);
+      }
+    } catch (err) {
+      console.error("Fetch settings error:", err);
+    }
+  };
+
+  const refreshData = async () => {
+    await Promise.all([fetchInitialData(), fetchSettings()]);
+  };
+
+  useEffect(() => {
+    refreshData();
+    
+    // --- REALTIME SUBSCRIPTIONS ---
+    // Ensure the tables 'products', 'orders', and 'site_settings' have Realtime enabled in Supabase!
+    const productSub = supabase.channel('global-products').on('postgres_changes', { event: '*', table: 'products' }, () => fetchInitialData()).subscribe();
+    const orderSub = supabase.channel('global-orders').on('postgres_changes', { event: '*', table: 'orders' }, () => fetchInitialData()).subscribe();
+    const categorySub = supabase.channel('global-categories').on('postgres_changes', { event: '*', table: 'categories' }, () => fetchInitialData()).subscribe();
+    const settingsSub = supabase.channel('global-settings').on('postgres_changes', { event: '*', table: 'site_settings' }, () => fetchSettings()).subscribe();
+
+    return () => {
+      productSub.unsubscribe();
+      orderSub.unsubscribe();
+      categorySub.unsubscribe();
+      settingsSub.unsubscribe();
+    };
+  }, []);
 
   const fetchUserProfile = async (uid: string, email: string) => {
     const { data } = await supabase.from('profiles').select('*').eq('id', uid).single();
@@ -210,13 +216,21 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       role: isAdmin ? 'admin' : (data?.role || 'customer')
     };
     setUser(userObj);
-    return userObj;
   };
 
   const checkSession = async () => {
     const { data: { session } } = await supabase.auth.getSession();
     if (session?.user) await fetchUserProfile(session.user.id, session.user.email!);
   };
+
+  useEffect(() => {
+    checkSession();
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (session?.user) await fetchUserProfile(session.user.id, session.user.email!);
+      else if (event === 'SIGNED_OUT') { setUser(null); setCurrentView('home'); }
+    });
+    return () => authListener.subscription.unsubscribe();
+  }, []);
 
   const loginWithEmail = async (email: string, pass: string) => {
     setAuthLoading(true);
@@ -225,6 +239,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     else if (data.user) {
       await fetchUserProfile(data.user.id, email);
       setActiveModal('none');
+      if (ADMIN_EMAILS.includes(email.toLowerCase())) setCurrentView('dashboard');
     }
     setAuthLoading(false);
   };
@@ -241,11 +256,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     setAuthLoading(false);
   };
 
-  const logout = async () => {
-    await supabase.auth.signOut();
-    setUser(null);
-    setCurrentView('home');
-  };
+  const logout = async () => { await supabase.auth.signOut(); setUser(null); setCurrentView('home'); };
 
   const saveSettingToDb = async (key: string, value: any) => {
     await supabase.from('site_settings').upsert({ key, value });
